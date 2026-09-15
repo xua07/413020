@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>重覆的清晨 - 時間循環 AVG</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #030712;
+            color: #f3f4f6;
+            touch-action: manipulation;
+        }
+
+        .font-mono-code {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* CRT 與 掃描線效果 */
+        .crt-overlay {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+        }
+
+        /* 滾動條美化 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(245, 158, 11, 0.5);
+            border-radius: 4px;
+        }
+
+        /* 立繪脈衝光暈 */
+        @keyframes portraitPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+            50% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.4); }
+        }
+        .portrait-pulse {
+            animation: portraitPulse 3s infinite ease-in-out;
+        }
+
+        /* 時間循環倒轉動畫 */
+        @keyframes loopGlitched {
+            0% { transform: translate(0); filter: hue-rotate(0deg); }
+            20% { transform: translate(-5px, 5px); filter: hue-rotate(90deg); }
+            40% { transform: translate(5px, -5px); filter: hue-rotate(180deg); }
+            60% { transform: translate(-3px, -3px); filter: hue-rotate(270deg); }
+            80% { transform: translate(3px, 3px); filter: hue-rotate(360deg); }
+            100% { transform: translate(0); filter: hue-rotate(0deg); }
+        }
+        .glitch-active {
+            animation: loopGlitched 0.4s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden select-none min-h-screen flex items-center justify-center sm:p-4">
+
+    <!-- 主遊戲視窗容器 (精緻直立手機面板) -->
+    <div id="app" class="relative w-full max-w-[430px] h-screen sm:h-[880px] sm:max-h-[92vh] bg-slate-950 flex flex-col justify-between overflow-hidden sm:rounded-[38px] sm:border-[6px] sm:border-slate-800/90 sm:shadow-[0_0_60px_rgba(0,0,0,0.9)]">
+        
+        <!-- CRT 電視紋理與陰影 overlay -->
+        <div class="crt-overlay absolute inset-0 z-30 pointer-events-none sm:rounded-[32px]"></div>
+
+        <!-- 頂部狀態資訊列 Header -->
+        <header class="relative z-20 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-3.5 sm:px-4 py-3 flex justify-between items-center text-xs">
+            <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                <span id="loop-counter" class="font-bold text-rose-400 tracking-wider font-mono-code text-sm">LOOP #1</span>
+            </div>
+            
+            <div id="time-display" class="flex items-center gap-1.5 text-amber-400 font-mono-code bg-amber-950/60 border border-amber-500/40 px-3 py-1 rounded-xl shadow-md">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400 animate-pulse"></i>
+                <span id="clock-text" class="font-bold text-xs tracking-widest">07:00 AM</span>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+                <!-- 人物檔案按鈕 -->
+                <button onclick="window.toggleModal('character-modal', true)" class="flex items-center gap-1 bg-slate-800/90 hover:bg-slate-700/90 text-sky-400 border border-sky-500/40 px-2.5 py-1 rounded-lg text-xs font-medium transition-all shadow-md active:scale-95">
+                    <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                    <span>人物(<span id="char-count">1</span>)</span>
+                </button>
+                <!-- 記憶庫按鈕 -->
+                <button onclick="window.toggleModal('memory-modal', true)" class="flex items-center gap-1 bg-slate-800/90 hover:bg-slate-700/90 text-amber-400 border border-amber-500/40 px-2.5 py-1 rounded-lg text-xs font-medium transition-all shadow-md active:scale-95">
+                    <i data-lucide="brain-circuit" class="w-3.5 h-3.5"></i>
+                    <span>記憶(<span id="memory-count">0</span>)</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 主劇情展示區域 -->
+        <main class="relative flex-1 bg-slate-950 flex flex-col justify-between overflow-hidden">
+            <!-- 場景背景圖 -->
+            <div id="scene-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-1000 filter brightness-75 scale-100" style="background-image: linear-gradient(to bottom, rgba(5, 6, 8, 0.4), rgba(5, 6, 8, 0.85)), url('https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=1200&q=80');"></div>
+
+            <!-- 音效/氛圍提示文字 -->
+            <div id="ambient-text" class="relative z-10 top-3 px-4 text-center text-[11px] sm:text-xs text-amber-200/90 tracking-widest italic bg-slate-950/80 backdrop-blur-md border border-amber-500/30 py-1.5 px-3 rounded-full transition-opacity duration-500 max-w-[90%] mx-auto shadow-xl">
+                [ 窗外雨聲淅瀝，手機鬧鐘刺耳地響著 ]
+            </div>
+
+            <!-- 角色立繪區 -->
+            <div id="portrait-wrapper" class="relative z-10 flex-1 flex items-end justify-center px-4 pb-2 transition-all duration-300">
+                <div id="portrait-card" class="relative flex flex-col items-center transition-all duration-500">
+                    <div class="relative w-32 h-32 sm:w-36 sm:h-36 rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-2xl bg-slate-900/90 portrait-pulse">
+                        <img id="speaker-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80" alt="Speaker Avatar" class="w-full h-full object-cover filter contrast-105 transition-all duration-500">
+                        <div id="emotion-badge" class="absolute top-2 right-2 bg-slate-950/90 border border-amber-400/50 text-amber-300 text-[10px] px-2 py-0.5 rounded font-mono tracking-wider shadow-md">
+                            混亂
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 對話與敘事面板 -->
+            <div class="relative z-20 px-4 pb-2 space-y-2 w-full">
+                <!-- 講者名稱與身份 -->
+                <div class="flex items-center justify-between">
+                    <div id="speaker-tag" class="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs px-3 py-1 rounded-xl font-bold tracking-wide shadow-lg backdrop-blur-md">
+                        <i data-lucide="user" class="w-3.5 h-3.5"></i>
+                        <span id="speaker-name">林奕 (你)</span>
+                    </div>
+                    <div id="trust-indicator" class="text-xs text-slate-300 bg-slate-900/80 border border-slate-700/80 px-2.5 py-0.5 rounded-lg backdrop-blur-md font-mono">
+                        警戒度: <span id="suspicion-level" class="text-rose-400 font-bold">30%</span>
+                    </div>
+                </div>
+
+                <!-- 劇情對話內文 -->
+                <div class="min-h-[110px] text-xs sm:text-sm leading-relaxed text-slate-100 tracking-wide font-normal bg-slate-900/85 border border-slate-700/80 p-3.5 rounded-xl backdrop-blur-md shadow-2xl" id="dialogue-text">
+                    「嗶嗶嗶——！」刺耳的鬧鐘將我拉回現實。又是這一天... 9月8日，下雨的週二。頭部傳來劇烈的陣痛，上一輪死亡前被襲擊的恐懼記憶仍留在神經中顫抖。
+                </div>
+            </div>
+        </main>
+
+        <!-- 下方選項操作區 -->
+        <footer class="relative z-20 bg-slate-950/95 border-t border-slate-800/80 p-3.5 min-h-[140px] flex flex-col justify-center">
+            <div id="choices-container" class="grid grid-cols-1 gap-2.5 w-full max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
+                <!-- 動態生成選項按鈕 -->
+            </div>
+        </footer>
+
+        <!-- 人物檔案 Modal -->
+        <div id="character-modal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-md items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+                <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                    <h3 class="text-sm font-bold text-sky-400 flex items-center gap-2">
+                        <i data-lucide="users" class="w-4 h-4"></i>
+                        <span>登場人物檔案</span>
+                    </h3>
+                    <button onclick="window.toggleModal('character-modal', false)" class="text-slate-400 hover:text-white p-1">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div id="character-list" class="p-4 space-y-3 overflow-y-auto custom-scrollbar flex-1 text-xs">
+                    <!-- 動態渲染人物 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 記憶庫 Modal -->
+        <div id="memory-modal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-md items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm max-h-[80vh] flex flex-col overflow-hidden shadow-2xl">
+                <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                    <h3 class="text-sm font-bold text-amber-400 flex items-center gap-2">
+                        <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                        <span>輪迴繼承記憶</span>
+                    </h3>
+                    <button onclick="window.toggleModal('memory-modal', false)" class="text-slate-400 hover:text-white p-1">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div id="memory-list" class="p-4 space-y-3 overflow-y-auto custom-scrollbar flex-1 text-xs">
+                    <!-- 動態渲染記憶 -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 音效系統 (使用 Web Audio API，避免外部資源加載失敗)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function playSound(type) {
+            try {
+                if (!audioCtx) audioCtx = new AudioContext();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                const now = audioCtx.currentTime;
+                if (type === 'type') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(600, now);
+                    gain.gain.setValueAtTime(0.02, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                    osc.start(now);
+                    osc.stop(now + 0.04);
+                } else if (type === 'click') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(440, now);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'reset') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.6);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+                    osc.start(now);
+                    osc.stop(now + 0.6);
+                }
+            } catch(e) {}
+        }
+
+        // 遊戲狀態與記憶數據
+        const gameState = {
+            loopCount: 1,
+            time: "07:00 AM",
+            currentScene: "start_morning",
+            suspicion: 30,
+            isTyping: false,
+            unlockedMemories: new Set(),
+            unlockedCharacters: new Set(["林奕"])
+        };
+
+        // 人物數據庫
+        const characters = {
+            "林奕": {
+                name: "林奕 (你)",
+                role: "主角 / 設計師",
+                desc: "陷入 9 月 8 日時間循環的普通租客。必須憑藉記憶解開公寓背後的黑暗秘密。",
+                avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80"
+            },
+            "陸雨晴": {
+                name: "陸雨晴",
+                role: "鄰居 / 502 室住戶",
+                desc: "眼神冷淡的神祕女子，似乎總是刻意躲避管理員與警方的注意。",
+                avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80"
+            },
+            "老陳": {
+                name: "老陳",
+                role: "公寓管理員",
+                desc: "在大樓工作多年的管理員，對地下室與電梯機房極度敏感，總是隨身帶著一大串鑰匙。",
+                avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80"
+            },
+            "夏薇": {
+                name: "夏薇",
+                role: "調查記者",
+                desc: "追查本市多起失蹤案的記者，持有寫著「時間陷阱」實驗的秘密檔案隨身碟。",
+                avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80"
+            }
+        };
+
+        // 記憶線索數據庫
+        const memories = {
+            "MEM_PASSPHONE": {
+                title: "保險箱密碼 [4092]",
+                desc: "老陳管理室後方隱藏保險箱的破解密碼。"
+            },
+            "MEM_ELEVATOR_FAULT": {
+                title: "08:00 電梯故障事故",
+                desc: "08:00 搭乘電梯會因纜線斷裂墜落，必須走安全梯。"
+            },
+            "MEM_REPORTER_USB": {
+                title: "夏薇的加密隨身碟",
+                desc: "內容揭示公寓地下室裝有微型粒子對撞時間發射器。"
+            }
+        };
+
+        // 劇情樹狀結構
+        const scenes = {
+            "start_morning": {
+                time: "07:00 AM",
+                speaker: "林奕",
+                emotion: "混亂",
+                suspicion: 30,
+                bg: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 窗外雨聲淅瀝，手機鬧鐘刺耳地響著 ]",
+                text: "「嗶嗶嗶——！」刺耳的鬧鐘將我拉回現實。又是這一天... 9月8日，下雨的週二。頭部傳來劇烈的陣痛，上一輪死亡前的恐懼記憶仍留在神經中顫抖。",
+                choices: [
+                    { text: "檢查手機上的即時新聞與訊息", next: "check_phone" },
+                    { text: "立刻開門走到走廊調查", next: "corridor_0715" },
+                    { text: "輸入記憶中的管理室密碼 [4092] (需記憶)", reqMemory: "MEM_PASSPHONE", next: "use_passcode" }
+                ]
+            },
+            "check_phone": {
+                time: "07:15 AM",
+                speaker: "林奕",
+                emotion: "思考",
+                suspicion: 30,
+                bg: "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 螢幕亮起，跳出數條推送新聞與未讀訊息 ]",
+                text: "手機新聞推送：「本市近期頻發強磁場異常，氣象局提醒市民慎防電器故障。」同時，鄰居陸雨晴發來一條訊息：「不要搭乘今天的電梯。」",
+                choices: [
+                    { text: "回覆陸雨晴並出門尋找她", next: "meet_yuqing" },
+                    { text: "忽略訊息，準備搭電梯下樓", next: "take_elevator" }
+                ]
+            },
+            "take_elevator": {
+                time: "08:00 AM",
+                speaker: "林奕",
+                emotion: "驚恐",
+                suspicion: 50,
+                bg: "https://images.unsplash.com/photo-1584282479200-4786d1a9d073?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 電梯發出嘎吱怪響，燈光劇烈閃爍 ]",
+                text: "進入電梯後不久，電梯突然劇烈震晃！纜線斷裂聲響起，你在失重與黑暗中墜落...（解鎖記憶：08:00 電梯故障事故）",
+                unlockMemory: "MEM_ELEVATOR_FAULT",
+                isDeath: true,
+                choices: [
+                    { text: "視線陷入黑暗... [啟動時間循環]", next: "start_morning" }
+                ]
+            },
+            "corridor_0715": {
+                time: "07:20 AM",
+                speaker: "老陳",
+                emotion: "警覺",
+                suspicion: 60,
+                bg: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 昏暗的走廊裡，老陳正在巡視管理室入口 ]",
+                text: "管理員老陳手握鋼製手電筒走向你：「林先生，這麼早？最近樓裡不太平，地下室機房嚴禁靠近，知道嗎？」他的眼神充滿戒備。",
+                unlockChar: "老陳",
+                choices: [
+                    { text: "避開老陳，走安全梯到 502 室找陸雨晴", next: "meet_yuqing" },
+                    { text: "試圖向老陳打聽地下室的秘密", next: "confront_chen" }
+                ]
+            },
+            "confront_chen": {
+                time: "07:35 AM",
+                speaker: "老陳",
+                emotion: "冰冷",
+                suspicion: 90,
+                bg: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 老陳眼神陡然變得無比陰沉，手電筒重重砸下 ]",
+                text: "老陳面露兇光：「你知道得太多了...這棟樓不需要清醒的人。」你眼前一黑，重重倒在地上...",
+                isDeath: true,
+                choices: [
+                    { text: "陷入昏迷... [啟動時間循環]", next: "start_morning" }
+                ]
+            },
+            "meet_yuqing": {
+                time: "07:30 AM",
+                speaker: "陸雨晴",
+                emotion: "焦急",
+                suspicion: 40,
+                bg: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 陸雨晴快速拉你進屋，門隨即緊緊鎖上 ]",
+                text: "「你終於來了...」陸雨晴壓低聲音說，「老陳不是普通管理員，他在地下室運作一個時間裝置！我偷偷拿到了保險箱密碼 [4092]，但需要有人引開他。」",
+                unlockChar: "陸雨晴",
+                unlockMemory: "MEM_PASSPHONE",
+                choices: [
+                    { text: "與陸雨晴合作，前往管理室偷取地下室鑰匙", next: "steal_key" },
+                    { text: "詢問調查記者夏薇的線索", next: "meet_reporter" }
+                ]
+            },
+            "meet_reporter": {
+                time: "08:15 AM",
+                speaker: "夏薇",
+                emotion: "嚴肅",
+                suspicion: 35,
+                bg: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 在樓頂陽台，夏薇展示著加密筆記型電腦 ]",
+                text: "「這份隨身碟記錄著『重覆清晨』計畫。」夏薇認真地說，「只要去地下室關閉發射核，時間就會恢復正常！」（解鎖記憶：夏薇的加密隨身碟）",
+                unlockChar: "夏薇",
+                unlockMemory: "MEM_REPORTER_USB",
+                choices: [
+                    { text: "帶上隨身碟，前往地下室關閉時間裝置", next: "basement_climax" }
+                ]
+            },
+            "use_passcode": {
+                time: "07:10 AM",
+                speaker: "林奕",
+                emotion: "果斷",
+                suspicion: 20,
+                bg: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 利用記憶預知，成功在老陳離開時打開管理室保險箱 ]",
+                text: "你順利輸入密碼 4092，打開保險箱拿到地下室萬能門禁卡與關閉手冊！",
+                choices: [
+                    { text: "直奔地下室關閉核心", next: "basement_climax" }
+                ]
+            },
+            "steal_key": {
+                time: "08:30 AM",
+                speaker: "林奕",
+                emotion: "緊張",
+                suspicion: 50,
+                bg: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 陸雨晴在走廊製造噪音引開老陳，你成功潛入 ]",
+                text: "你成功取得門禁卡，並與陸雨晴會合一同前往地下室！",
+                choices: [
+                    { text: "進入地下室深處", next: "basement_climax" }
+                ]
+            },
+            "basement_climax": {
+                time: "09:00 AM",
+                speaker: "林奕",
+                emotion: "震驚",
+                suspicion: 10,
+                bg: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 巨大的蜂鳴聲響起，藍色的時間粒子在中央環形裝置中旋轉 ]",
+                text: "你按照指示切斷電源、插入開關，時間發射器漸漸平息... 倒數計時歸零，一切歸於平靜。窗外的雨停了，陽光灑入，你長舒一口氣：「終於結束了...」",
+                choices: [
+                    { text: "閉上眼，迎接真正的明天 (9月9日)...", next: "twist_ending" }
+                ]
+            },
+            "twist_ending": {
+                time: "07:00 AM",
+                speaker: "林奕",
+                emotion: "絕望",
+                suspicion: 100,
+                bg: "https://images.unsplash.com/photo-1509114397022-ed747cca3f65?auto=format&fit=crop&w=1200&q=80",
+                ambient: "[ 刺耳的鬧鐘聲再次炸響！ ]",
+                text: "「嗶嗶嗶——！」手機螢幕亮起：【9月8日 週二 07:00 AM】...你渾身冰冷地發現：你關閉的只是外層循環，你依然陷在更深的第二層時間監獄中... [ 第一階段完成 · 敬請期待後續章節 ]",
+                choices: [
+                    { text: "重新開始試圖尋找真真相", next: "start_morning" }
+                ]
+            }
+        };
+
+        // 模態框切換
+        function toggleModal(modalId, show) {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
+            if (show) {
+                if (modalId === 'character-modal') renderCharacterList();
+                if (modalId === 'memory-modal') renderMemoryList();
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+            playSound('click');
+        }
+        window.toggleModal = toggleModal;
+
+        // 渲染人物清單
+        function renderCharacterList() {
+            const container = document.getElementById('character-list');
+            container.innerHTML = '';
+            
+            gameState.unlockedCharacters.forEach(charName => {
+                const char = characters[charName];
+                if (!char) return;
+                const div = document.createElement('div');
+                div.className = "bg-slate-950/80 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-3";
+                div.innerHTML = `
+                    <img src="${char.avatar}" class="w-10 h-10 rounded-lg object-cover border border-sky-400/50">
+                    <div>
+                        <div class="font-bold text-sky-300 flex items-center gap-2">
+                            <span>${char.name}</span>
+                            <span class="text-[10px] text-slate-400 font-normal">(${char.role})</span>
+                        </div>
+                        <div class="text-[11px] text-slate-300 mt-0.5 leading-snug">${char.desc}</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            document.getElementById('char-count').innerText = gameState.unlockedCharacters.size;
+        }
+
+        // 渲染記憶庫清單
+        function renderMemoryList() {
+            const container = document.getElementById('memory-list');
+            container.innerHTML = '';
+
+            if (gameState.unlockedMemories.size === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-center py-4">尚無繼承的記憶線索</div>';
+                return;
+            }
+
+            gameState.unlockedMemories.forEach(memId => {
+                const mem = memories[memId];
+                if (!mem) return;
+                const div = document.createElement('div');
+                div.className = "bg-slate-950/80 border border-amber-500/40 p-2.5 rounded-xl";
+                div.innerHTML = `
+                    <div class="font-bold text-amber-300 flex items-center gap-1.5">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span>${mem.title}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-300 mt-1 leading-snug">${mem.desc}</div>
+                `;
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+            document.getElementById('memory-count').innerText = gameState.unlockedMemories.size;
+        }
+
+        // 打字機效果渲染對話
+        function typeText(elementId, text, callback) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = '';
+            gameState.isTyping = true;
+            let i = 0;
+
+            function step() {
+                if (i < text.length) {
+                    el.innerHTML += text.charAt(i);
+                    if (i % 3 === 0) playSound('type');
+                    i++;
+                    setTimeout(step, 20);
+                } else {
+                    gameState.isTyping = false;
+                    if (callback) callback();
+                }
+            }
+            step();
+        }
+
+        // 渲染當前場景
+        function renderScene(sceneKey) {
+            const scene = scenes[sceneKey];
+            if (!scene) return;
+
+            gameState.currentScene = sceneKey;
+
+            // 時間循環重置處理
+            if (sceneKey === 'start_morning' && gameState.loopCount > 1) {
+                document.getElementById('app').classList.add('glitch-active');
+                playSound('reset');
+                setTimeout(() => {
+                    document.getElementById('app').classList.remove('glitch-active');
+                }, 500);
+            }
+
+            // 更新死亡/循環計數
+            if (scene.isDeath) {
+                gameState.loopCount++;
+                document.getElementById('loop-counter').innerText = `LOOP #${gameState.loopCount}`;
+            }
+
+            // 解鎖線索與角色
+            if (scene.unlockMemory) {
+                gameState.unlockedMemories.add(scene.unlockMemory);
+                document.getElementById('memory-count').innerText = gameState.unlockedMemories.size;
+            }
+            if (scene.unlockChar) {
+                gameState.unlockedCharacters.add(scene.unlockChar);
+                document.getElementById('char-count').innerText = gameState.unlockedCharacters.size;
+            }
+
+            // 更新 UI 頂部與面板數據
+            document.getElementById('clock-text').innerText = scene.time;
+            document.getElementById('speaker-name').innerText = scene.speaker;
+            document.getElementById('suspicion-level').innerText = `${scene.suspicion}%`;
+            document.getElementById('emotion-badge').innerText = scene.emotion;
+            document.getElementById('ambient-text').innerText = scene.ambient;
+
+            // 背景圖與角色頭像
+            if (scene.bg) {
+                document.getElementById('scene-bg').style.backgroundImage = `linear-gradient(to bottom, rgba(5, 6, 8, 0.4), rgba(5, 6, 8, 0.85)), url('${scene.bg}')`;
+            }
+            
+            const charObj = characters[scene.speaker];
+            if (charObj) {
+                document.getElementById('speaker-avatar').src = charObj.avatar;
+            }
+
+            // 打字機對話文本與選項生成
+            const choicesContainer = document.getElementById('choices-container');
+            choicesContainer.innerHTML = '';
+
+            typeText('dialogue-text', scene.text, () => {
+                if (scene.choices) {
+                    scene.choices.forEach(choice => {
+                        // 記憶條件過濾
+                        if (choice.reqMemory && !gameState.unlockedMemories.has(choice.reqMemory)) {
+                            return;
+                        }
+
+                        const btn = document.createElement('button');
+                        const isMemoryChoice = !!choice.reqMemory;
+                        
+                        btn.className = `w-full p-3 sm:p-3.5 text-left text-xs sm:text-sm rounded-xl border transition-all duration-200 flex items-center justify-between group active:scale-[0.98] ${
+                            isMemoryChoice 
+                            ? 'bg-amber-950/60 border-amber-500/80 text-amber-200 hover:bg-amber-900/80 shadow-lg' 
+                            : 'bg-slate-900/90 border-slate-800/90 text-slate-200 hover:bg-slate-800 hover:border-slate-600'
+                        }`;
+
+                        btn.innerHTML = `
+                            <span class="font-medium tracking-wide flex items-center gap-2">
+                                ${isMemoryChoice ? '<i data-lucide="sparkles" class="w-4 h-4 text-amber-400 animate-pulse"></i>' : ''}
+                                ${choice.text}
+                            </span>
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:translate-x-1 transition-transform"></i>
+                        `;
+
+                        btn.onclick = () => {
+                            if (!gameState.isTyping) {
+                                playSound('click');
+                                renderScene(choice.next);
+                            }
+                        };
+
+                        choicesContainer.appendChild(btn);
+                    });
+                    lucide.createIcons();
+                }
+            });
+        }
+
+        window.onload = function() {
+            lucide.createIcons();
+            renderScene('start_morning');
+        };
+    </script>
+</body>
+</html>
