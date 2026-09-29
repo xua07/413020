@@ -58,7 +58,7 @@
 
 點擊下方連結即可直接在瀏覽器中體驗遊戲：
 
-👉 **[立即遊玩《重複清晨》](index.html)**
+👉 **[立即遊玩《重複清晨》](https://charming-paletas-1cabb7.netlify.app/)**
 
 *(註：若部署於 GitHub Pages，可將上方連結替換為你的 GitHub Pages URL，例如 `https://<your-username>.github.io/<your-repo-name>/index.html`)*
 
